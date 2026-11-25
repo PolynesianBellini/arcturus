@@ -1,4 +1,4 @@
-package com.example.homework;
+package com.example.arcturus;
 
 import org.springframework.boot.test.context.TestConfiguration;
 

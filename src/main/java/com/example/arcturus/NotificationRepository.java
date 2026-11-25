@@ -1,4 +1,4 @@
-package com.example.homework;
+package com.example.arcturus;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;

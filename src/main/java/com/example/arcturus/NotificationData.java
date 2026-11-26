@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 
 @Data
 @Entity
-@Table(name = "NOTIFICATION_TX", schema = "PUBLIC")
+@Table(name = "NOTIFICATIONS", schema = "PUBLIC")
 public class NotificationData {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,6 +22,7 @@ public class NotificationData {
     @Column(name = "notification_type")
     String notificationType;
 
+    @Column(name = "target_dest")
     String targetDest;
 
     @Lob

@@ -2,6 +2,7 @@ package com.example.arcturus.repository;
 
 import com.example.arcturus.model.NotificationData;
 import com.example.arcturus.model.NotificationResponse;
+import com.example.arcturus.model.NotificationStatus;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
@@ -49,6 +50,21 @@ public class NotificationRepository {
                 DELETE FROM NOTIFICATION_BLACKLIST
                 WHERE BLOCKED_UNTIL IS NOT NULL AND BLOCKED_UNTIL <= CURRENT_TIMESTAMP
                 """).executeUpdate();
+    }
+
+    public int markExpiredBlockedNotificationsForReview() {
+        return em.createNativeQuery("""
+                UPDATE NOTIFICATIONS
+                SET CURRENT_STATE = ?1, UPDATED_AT = CURRENT_TIMESTAMP
+                WHERE IS_BLOCKED = TRUE AND CURRENT_STATE = ?2
+                AND TARGET_DEST IN (
+                    SELECT TARGET_DEST FROM NOTIFICATION_BLACKLIST
+                    WHERE BLOCKED_UNTIL IS NOT NULL AND BLOCKED_UNTIL <= CURRENT_TIMESTAMP
+                )
+                """)
+                .setParameter(1, NotificationStatus.IN_REVIEW.getCode())
+                .setParameter(2, NotificationStatus.REJECTED.getCode())
+                .executeUpdate();
     }
 
     public List<NotificationResponse> getHistory() {

@@ -8,6 +8,7 @@ public enum NotificationStatus {
     SENT("S"),
     ERROR("E"),
     UNKNOWN("U"),
+    IN_REVIEW("I"),
     REJECTED("R");
 
     private final String code;

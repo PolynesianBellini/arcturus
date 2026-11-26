@@ -41,7 +41,7 @@ class NotificationControllerTests {
         List<NotificationResponse> response = service.getHistory();
 
         assertEquals(20, response.size(), "Should return exactly 20 items");
-        assertEquals(21L, response.get(0).getId(), "First item should be the latest (ID 21)");
+        assertEquals(21L, response.getFirst().getId(), "First item should be the latest (ID 21)");
         assertEquals(2L, response.get(19).getId(), "Last item should be ID 2 (20th latest)");
     }
 

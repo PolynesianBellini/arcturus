@@ -23,11 +23,31 @@ public class NotificationService {
             "PUSH", new PushHandler()
     );
 
-    // TODO IMPLEMENT NOTIFICATION PROCESSING
     public NotificationResponse processNotification(String type, String target, String payload)
             throws Exception {
+        validateInputs(type, target, payload);
+        log.debug("Processing notification: type={}, target={}", type, target);
+        
+        if (!REGISTRY.containsKey(type)) {
+            throw new IllegalArgumentException("Unsupported notification type: " + type);
+        }
+        
+        REGISTRY.get(type).execute(target, payload);
+        
+        NotificationData data = createNewNotificationData(type, target, payload);
+        repository.save(data);
+        
+        log.info("Successfully processed notification: type={}, target={}", type, target);
+        return repository.createNotificationResponse(data);
+    }
 
-        return null;
+    public void updateNotification(String type, String target, String payload) {
+        validateInputs(type, target, payload);
+        log.debug("Updating notification: type={}, target={}", type, target);
+        
+        NotificationData notificationData = createNewNotificationData(type, target, payload);
+        repository.update(notificationData);
+        log.info("Successfully updated notification: type={}, target={}", type, target);
     }
 
     public List<NotificationResponse> getHistory() {
@@ -38,12 +58,23 @@ public class NotificationService {
         return repository.getLatestEntry();
     }
 
-    public void updateNotification(String type, String target, String payload) {
-        if (payload.isBlank() || target.isBlank()) {
-            throw new IllegalArgumentException("Payload or target was empty");
+    private void validateInputs(String type, String target, String payload) {
+        if (type == null || type.isBlank()) {
+            log.warn("Validation failed: type is blank");
+            throw new IllegalArgumentException("Notification type cannot be blank");
         }
-        NotificationData notificationData = createNewNotificationData(type, target, payload);
-        repository.update(notificationData);
+        if (target == null || target.isBlank()) {
+            log.warn("Validation failed: target is blank");
+            throw new IllegalArgumentException("Target cannot be blank");
+        }
+        if (payload == null || payload.isBlank()) {
+            log.warn("Validation failed: payload is blank");
+            throw new IllegalArgumentException("Payload cannot be blank");
+        }
+        if (payload.length() > 5000) {
+            log.warn("Validation failed: payload exceeds max length");
+            throw new IllegalArgumentException("Payload cannot exceed 5000 characters");
+        }
     }
 
     private NotificationData createNewNotificationData(String type, String target, String payload) {

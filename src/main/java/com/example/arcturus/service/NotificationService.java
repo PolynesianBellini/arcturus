@@ -1,4 +1,9 @@
-package com.example.arcturus;
+package com.example.arcturus.service;
+
+import com.example.arcturus.model.NotificationData;
+import com.example.arcturus.model.NotificationResponse;
+import com.example.arcturus.model.NotificationStatus;
+import com.example.arcturus.repository.NotificationRepository;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,7 +36,17 @@ public class NotificationService {
         if (!REGISTRY.containsKey(type)) {
             throw new IllegalArgumentException("Unsupported notification type: " + type);
         }
-        
+
+        if (repository.isUserBlacklisted(target)) {
+            NotificationData data = createNewNotificationData(type, target, payload);
+            data.setCurrentState(NotificationStatus.REJECTED.getCode());
+            data.setIsBlocked(true);
+            data.setLastMsgOrErr("Target is blocked");
+            repository.save(data);
+            log.warn("Notification rejected for blocked target: {}", target);
+            return repository.createNotificationResponse(data);
+        }
+
         REGISTRY.get(type).execute(target, payload);
         
         NotificationData data = createNewNotificationData(type, target, payload);
@@ -85,7 +100,10 @@ public class NotificationService {
         notifData.setCurrentState(NotificationStatus.NEW.getCode());
         notifData.setFailureCount(0);
         notifData.setDispatchCount(0);
-        notifData.setCreatedAt(LocalDateTime.now());
+        notifData.setIsBlocked(false);
+        LocalDateTime now = LocalDateTime.now();
+        notifData.setCreatedAt(now);
+        notifData.setUpdatedAt(now);
 
         return notifData;
     }

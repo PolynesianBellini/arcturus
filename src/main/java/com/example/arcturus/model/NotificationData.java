@@ -1,4 +1,4 @@
-package com.example.arcturus;
+package com.example.arcturus.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

@@ -1,4 +1,4 @@
-package com.example.arcturus;
+package com.example.arcturus.model;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

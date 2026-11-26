@@ -1,4 +1,7 @@
-package com.example.arcturus;
+package com.example.arcturus.repository;
+
+import com.example.arcturus.model.NotificationData;
+import com.example.arcturus.model.NotificationResponse;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
@@ -41,6 +44,13 @@ public class NotificationRepository {
                 .getSingleResult();
     }
 
+    public int removeExpiredBlocks() {
+        return em.createNativeQuery("""
+                DELETE FROM NOTIFICATION_BLACKLIST
+                WHERE BLOCKED_UNTIL IS NOT NULL AND BLOCKED_UNTIL <= CURRENT_TIMESTAMP
+                """).executeUpdate();
+    }
+
     public List<NotificationResponse> getHistory() {
         List<NotificationData> entries = em.createQuery(
                 "SELECT n FROM NotificationData n ORDER BY n.id DESC", 
@@ -53,7 +63,7 @@ public class NotificationRepository {
 
     public NotificationResponse getLatestEntry() {
         NotificationData latest = (NotificationData) em.createNativeQuery(
-                        "SELECT * FROM NOTIFICATION_TX ORDER BY ID DESC LIMIT 1", NotificationData.class)
+                        "SELECT * FROM NOTIFICATIONS ORDER BY ID DESC LIMIT 1", NotificationData.class)
                 .getSingleResult();
         return createNotificationResponse(latest);
     }

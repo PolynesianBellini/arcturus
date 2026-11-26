@@ -1,4 +1,8 @@
-package com.example.arcturus;
+package com.example.arcturus.controller;
+
+import com.example.arcturus.model.NotificationRequest;
+import com.example.arcturus.model.NotificationResponse;
+import com.example.arcturus.service.NotificationService;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;

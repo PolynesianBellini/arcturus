@@ -1,5 +1,9 @@
 package com.example.arcturus;
 
+import com.example.arcturus.model.NotificationData;
+import com.example.arcturus.model.NotificationResponse;
+import com.example.arcturus.repository.NotificationRepository;
+import com.example.arcturus.service.NotificationService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -59,6 +64,24 @@ class NotificationControllerTests {
         NotificationResponse response = service.getLatestNotificationFromDb();
 
         assertEquals(3, response.getId(), "should be latest entry");
+    }
+
+    @Test
+    void testNotificationForBlockedTargetIsRecordedAsRejected() throws Exception {
+        entityManager.createNativeQuery("""
+                INSERT INTO NOTIFICATION_BLACKLIST (TARGET_DEST, BLOCKED_AT, BLOCKED_UNTIL, BLOCKING_REASON)
+                VALUES ('error@example.com', CURRENT_TIMESTAMP, DATEADD('DAY', 1, CURRENT_TIMESTAMP), 'test')
+                """).executeUpdate();
+
+        NotificationResponse response = service.processNotification("EMAIL", "error@example.com", "message");
+
+        assertEquals("R", response.getStatus());
+        assertTrue(response.isBlocked());
+        assertEquals(0, response.getDispatchCount());
+        entityManager.clear();
+        NotificationData saved = entityManager.find(NotificationData.class, response.getId());
+        assertEquals("R", saved.getCurrentState());
+        assertTrue(saved.getIsBlocked());
     }
 
     private void insertTestNotifications(int count) {

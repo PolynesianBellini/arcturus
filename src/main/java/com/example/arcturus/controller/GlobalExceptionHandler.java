@@ -1,4 +1,6 @@
-package com.example.arcturus;
+package com.example.arcturus.controller;
+
+import com.example.arcturus.model.ErrorResponse;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

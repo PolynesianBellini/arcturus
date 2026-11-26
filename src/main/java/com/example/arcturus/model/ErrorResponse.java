@@ -1,4 +1,4 @@
-package com.example.arcturus;
+package com.example.arcturus.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;

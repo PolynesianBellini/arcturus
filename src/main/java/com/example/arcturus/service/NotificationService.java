@@ -5,13 +5,16 @@ import com.example.arcturus.model.NotificationResponse;
 import com.example.arcturus.model.NotificationStatus;
 import com.example.arcturus.repository.NotificationRepository;
 
+import jakarta.persistence.EntityNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -76,13 +79,20 @@ public class NotificationService {
         return repository.createNotificationResponse(data);
     }
 
-    public void updateNotification(String type, String target, String payload) {
+    public void updateNotification(Long id, String type, String target, String payload) {
         validateInputs(type, target, payload);
-        log.debug("Updating notification: type={}, target={}", type, target);
-        
-        NotificationData notificationData = createNewNotificationData(type, target, payload);
-        repository.update(notificationData);
-        log.info("Successfully updated notification: type={}, target={}", type, target);
+        if (!registry.containsKey(type)) {
+            throw new IllegalArgumentException("Unsupported notification type: " + type);
+        }
+        if (repository.update(id, type, target, payload) == 0) {
+            String status = repository.findStatus(id)
+                    .orElseThrow(() -> new EntityNotFoundException("Notification not found for id: " + id));
+            if (NotificationStatus.SENT.getCode().equals(status)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Sent notifications cannot be updated");
+            }
+            throw new IllegalStateException("Notification was not updated for id: " + id);
+        }
+        log.info("Successfully updated notification: id={}", id);
     }
 
     public List<NotificationResponse> getHistory() {

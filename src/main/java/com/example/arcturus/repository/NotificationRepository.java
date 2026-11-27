@@ -11,7 +11,9 @@ import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Repository
@@ -27,9 +29,27 @@ public class NotificationRepository {
         return notification.getId();
     }
 
-    public void update(NotificationData notificationData) {
-        em.merge(notificationData);
-        em.flush();
+    public int update(Long id, String type, String target, String payload) {
+        return em.createQuery("""
+                UPDATE NotificationData n
+                SET n.notificationType = :type, n.targetDest = :target,
+                    n.payloadContent = :payload, n.updatedAt = :updatedAt
+                WHERE n.id = :id AND n.currentState <> :sent
+                """)
+                .setParameter("id", id)
+                .setParameter("sent", NotificationStatus.SENT.getCode())
+                .setParameter("type", type)
+                .setParameter("target", target)
+                .setParameter("payload", payload)
+                .setParameter("updatedAt", LocalDateTime.now())
+                .executeUpdate();
+    }
+
+    public Optional<String> findStatus(Long id) {
+        return em.createQuery("SELECT n.currentState FROM NotificationData n WHERE n.id = :id", String.class)
+                .setParameter("id", id)
+                .getResultStream()
+                .findFirst();
     }
 
     public boolean isUserBlacklisted(String target) {

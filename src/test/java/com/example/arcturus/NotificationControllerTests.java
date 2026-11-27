@@ -178,6 +178,82 @@ class NotificationControllerTests {
         assertEquals("E", service.getHistory().getFirst().getStatus());
     }
 
+    @Test
+    void testUpdateChangesOnlyTheRequestedNotification() throws Exception {
+        insertTestNotifications(2);
+        entityManager.clear();
+        List<NotificationResponse> before = service.getHistory();
+        NotificationResponse original = before.getFirst();
+        NotificationResponse other = before.get(1);
+
+        MockMvcBuilders.standaloneSetup(new NotificationController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(post("/api/notifications/update/{id}", original.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"SMS","target":"new-target","payload":"updated message"}
+                                """))
+                .andExpect(status().isOk());
+
+        entityManager.clear();
+        List<NotificationResponse> after = service.getHistory();
+        assertEquals(2, after.size());
+        assertEquals(original.getId(), after.getFirst().getId());
+        assertEquals("SMS", after.getFirst().getType());
+        assertEquals("new-target", after.getFirst().getTarget());
+        assertEquals("updated message", after.getFirst().getPayload());
+        assertEquals(original.getStatus(), after.getFirst().getStatus());
+        assertEquals(original.getDispatchCount(), after.getFirst().getDispatchCount());
+        assertEquals(original.getCreatedAt(), after.getFirst().getCreatedAt());
+        assertEquals(other.getTarget(), after.get(1).getTarget());
+        assertEquals(other.getPayload(), after.get(1).getPayload());
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void testUpdateReturnsNotFoundWithoutInserting() throws Exception {
+        MockMvcBuilders.standaloneSetup(new NotificationController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(post("/api/notifications/update/{id}", 9999)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"SMS","target":"new-target","payload":"updated message"}
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.message").value("Notification not found"));
+
+        assertEquals(0, service.getHistory().size());
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void testSentNotificationCannotBeUpdated() throws Exception {
+        NotificationResponse original = service.processNotification("EMAIL", "user@example.com", "original");
+        entityManager.flush();
+        entityManager.clear();
+
+        MockMvcBuilders.standaloneSetup(new NotificationController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(post("/api/notifications/update/{id}", original.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"SMS","target":"new-target","payload":"changed"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Sent notifications cannot be updated"));
+
+        entityManager.clear();
+        NotificationResponse saved = service.getHistory().getFirst();
+        assertEquals(original.getId(), saved.getId());
+        assertEquals("S", saved.getStatus());
+        assertEquals("EMAIL", saved.getType());
+        assertEquals("user@example.com", saved.getTarget());
+        assertEquals("original", saved.getPayload());
+    }
+
     private void insertTestNotifications(int count) {
         for (int i = 1; i <= count; i++) {
             NotificationData notification = new NotificationData();

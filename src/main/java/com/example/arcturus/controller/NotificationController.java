@@ -4,9 +4,11 @@ import com.example.arcturus.model.NotificationRequest;
 import com.example.arcturus.model.NotificationResponse;
 import com.example.arcturus.service.NotificationService;
 
+import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,7 +27,7 @@ public class NotificationController {
     }
 
     @PostMapping("/send")
-    public NotificationResponse sendNotification(@RequestBody @jakarta.validation.Valid NotificationRequest request) throws Exception {
+    public NotificationResponse sendNotification(@RequestBody @Valid NotificationRequest request) throws Exception {
         log.info("Received notification request: type={}, target={}", request.getType(), request.getTarget());
         try {
             NotificationResponse response = service.processNotification(request.getType(), request.getTarget(), request.getPayload());
@@ -37,10 +39,10 @@ public class NotificationController {
         }
     }
 
-    @PostMapping("/update")
-    public void updateNotification(@RequestBody @jakarta.validation.Valid NotificationRequest request) {
-        log.info("Updating notification: type={}, target={}", request.getType(), request.getTarget());
-        service.updateNotification(request.getType(), request.getTarget(), request.getPayload());
+    @PostMapping("/update/{id}")
+    public void updateNotification(@PathVariable Long id, @RequestBody @Valid NotificationRequest request) {
+        log.info("Updating notification: id={}", id);
+        service.updateNotification(id, request.getType(), request.getTarget(), request.getPayload());
     }
 
     @GetMapping("/latest")

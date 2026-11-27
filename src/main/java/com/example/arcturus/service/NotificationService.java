@@ -6,7 +6,12 @@ import com.example.arcturus.model.NotificationStatus;
 import com.example.arcturus.repository.NotificationRepository;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,23 +22,25 @@ import java.util.Map;
 public class NotificationService {
 
     private final NotificationRepository repository;
+    private final Map<String, INotificationHandler> registry;
 
-    public NotificationService(NotificationRepository repository) {
+    public NotificationService(NotificationRepository repository, JavaMailSender mailSender,
+                               @Value("${arcturus.mail.from}") String sender) {
         this.repository = repository;
+        this.registry = Map.of(
+                "EMAIL", new EmailHandler(mailSender, sender),
+                "SMS", new SmsHandler(),
+                "PUSH", new PushHandler()
+        );
     }
 
-    private static final Map<String, INotificationHandler> REGISTRY = Map.of(
-            "EMAIL", new EmailHandler(),
-            "SMS", new SmsHandler(),
-            "PUSH", new PushHandler()
-    );
-
+    @Transactional(noRollbackFor = MailException.class)
     public NotificationResponse processNotification(String type, String target, String payload)
             throws Exception {
         validateInputs(type, target, payload);
         log.debug("Processing notification: type={}, target={}", type, target);
         
-        if (!REGISTRY.containsKey(type)) {
+        if (!registry.containsKey(type)) {
             throw new IllegalArgumentException("Unsupported notification type: " + type);
         }
 
@@ -47,9 +54,22 @@ public class NotificationService {
             return repository.createNotificationResponse(data);
         }
 
-        REGISTRY.get(type).execute(target, payload);
-        
         NotificationData data = createNewNotificationData(type, target, payload);
+        try {
+            registry.get(type).execute(target, payload);
+        } catch (MailException ex) {
+            data.setCurrentState(NotificationStatus.ERROR.getCode());
+            data.setDispatchCount(1);
+            data.setFailureCount(1);
+            data.setLastMsgOrErr("Email delivery failed");
+            repository.save(data);
+            throw ex;
+        }
+
+        if ("EMAIL".equals(type)) {
+            data.setCurrentState(NotificationStatus.SENT.getCode());
+            data.setDispatchCount(1);
+        }
         repository.save(data);
         
         log.info("Successfully processed notification: type={}, target={}", type, target);
@@ -112,15 +132,18 @@ public class NotificationService {
         void execute(String target, String payload) throws Exception;
     }
 
-    private static class EmailHandler implements INotificationHandler {
+    private record EmailHandler(JavaMailSender mailSender, String sender) implements INotificationHandler {
+
         @Override
-        public void execute(String target, String payload) {
-            if (target != null && target.contains("error")) {
-                throw new RuntimeException("SMTP Timeout");
+            public void execute(String target, String payload) {
+                SimpleMailMessage message = new SimpleMailMessage();
+                message.setFrom(sender);
+                message.setTo(target);
+                message.setSubject("Notification");
+                message.setText(payload);
+                mailSender.send(message);
             }
-            log.info("[EMAIL] {} -> {}", target, payload);
         }
-    }
 
     private static class SmsHandler implements INotificationHandler {
         @Override

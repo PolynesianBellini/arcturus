@@ -1,5 +1,7 @@
 package com.example.arcturus;
 
+import com.example.arcturus.controller.GlobalExceptionHandler;
+import com.example.arcturus.controller.NotificationController;
 import com.example.arcturus.model.NotificationData;
 import com.example.arcturus.model.NotificationResponse;
 import com.example.arcturus.repository.NotificationRepository;
@@ -7,17 +9,33 @@ import com.example.arcturus.service.NotificationService;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.mail.MailSendException;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.transaction.TestTransaction;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
@@ -33,6 +51,9 @@ class NotificationControllerTests {
 
     @Autowired
     private EntityManager entityManager;
+
+    @MockitoBean
+    private JavaMailSender mailSender;
 
     @BeforeEach
     void setUp() {
@@ -82,6 +103,79 @@ class NotificationControllerTests {
         NotificationData saved = entityManager.find(NotificationData.class, response.getId());
         assertEquals("R", saved.getCurrentState());
         assertTrue(saved.getIsBlocked());
+        verifyNoInteractions(mailSender);
+    }
+
+    @Test
+    void testEmailIsSentAndRecorded() throws Exception {
+        NotificationResponse response = service.processNotification("EMAIL", "user@example.com", "hello");
+
+        ArgumentCaptor<SimpleMailMessage> message = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(message.capture());
+        assertEquals("notifications@example.com", message.getValue().getFrom());
+        String[] recipients = message.getValue().getTo();
+        if (recipients == null) {
+            throw new AssertionError("Email has no recipients");
+        }
+        assertEquals("user@example.com", recipients[0]);
+        assertEquals("Notification", message.getValue().getSubject());
+        assertEquals("hello", message.getValue().getText());
+        assertEquals("S", response.getStatus());
+        assertEquals(1, response.getDispatchCount());
+
+        entityManager.clear();
+        NotificationData saved = entityManager.find(NotificationData.class, response.getId());
+        assertEquals("S", saved.getCurrentState());
+        assertEquals(1, saved.getDispatchCount());
+    }
+
+    @Test
+    void testEmailFailureIsRecordedAndPropagated() {
+        TestTransaction.end();
+        doThrow(new MailSendException("SMTP unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+
+        MailSendException error = assertThrows(MailSendException.class,
+                () -> service.processNotification("EMAIL", "user@example.com", "hello"));
+
+        assertEquals("SMTP unavailable", error.getMessage());
+        List<NotificationResponse> history = service.getHistory();
+        assertEquals(1, history.size());
+        assertEquals("E", history.getFirst().getStatus());
+        assertEquals(1, history.getFirst().getDispatchCount());
+        assertEquals(1, history.getFirst().getFailureCount());
+        assertEquals("Email delivery failed", history.getFirst().getMessage());
+    }
+
+    @Test
+    void testExpiredBlockAllowsEmail() throws Exception {
+        entityManager.createNativeQuery("""
+                INSERT INTO NOTIFICATION_BLACKLIST (TARGET_DEST, BLOCKED_AT, BLOCKED_UNTIL, BLOCKING_REASON)
+                VALUES ('user@example.com', CURRENT_TIMESTAMP, DATEADD('DAY', -1, CURRENT_TIMESTAMP), 'test')
+                """).executeUpdate();
+
+        NotificationResponse response = service.processNotification("EMAIL", "user@example.com", "hello");
+
+        assertEquals("S", response.getStatus());
+        verify(mailSender).send(any(SimpleMailMessage.class));
+    }
+
+    @Test
+    void testSendEndpointReturnsServerErrorWhenEmailFails() throws Exception {
+        TestTransaction.end();
+        doThrow(new MailSendException("SMTP unavailable")).when(mailSender).send(any(SimpleMailMessage.class));
+
+        MockMvcBuilders.standaloneSetup(new NotificationController(service))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build()
+                .perform(post("/api/notifications/send")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"type":"EMAIL","target":"user@example.com","payload":"hello"}
+                                """))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("Internal server error"));
+
+        assertEquals("E", service.getHistory().getFirst().getStatus());
     }
 
     private void insertTestNotifications(int count) {

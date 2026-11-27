@@ -56,6 +56,26 @@ class ExpiredBlockCleanupJobTests {
         assertEquals(List.of("future", "indefinite"), blockedTargets());
     }
 
+    @Test
+    void movesPreviouslyBlockedNotificationsToReview() {
+        insertBlock("expired", -1);
+        insertBlock("future", 1);
+        insertBlock("indefinite", null);
+        insertNotification("expired", "R", true);
+        insertNotification("expired", "R", true);
+        insertNotification("expired", "N", false);
+        insertNotification("future", "R", true);
+        insertNotification("indefinite", "R", true);
+
+        job.removeExpiredBlocks();
+
+        assertEquals(2, countNotifications("expired", "I"));
+        assertEquals(1, countNotifications("expired", "N"));
+        assertEquals(1, countNotifications("future", "R"));
+        assertEquals(1, countNotifications("indefinite", "R"));
+        assertEquals(List.of("future", "indefinite"), blockedTargets());
+    }
+
     private void insertBlock(String target, Integer daysUntilExpiry) {
         jdbcTemplate.update("""
                 INSERT INTO NOTIFICATION_BLACKLIST (TARGET_DEST, BLOCKED_AT, BLOCKED_UNTIL, BLOCKING_REASON)
@@ -67,4 +87,23 @@ class ExpiredBlockCleanupJobTests {
         return jdbcTemplate.queryForList(
                 "SELECT TARGET_DEST FROM NOTIFICATION_BLACKLIST ORDER BY TARGET_DEST", String.class);
     }
+
+    private void insertNotification(String target, String status, boolean blocked) {
+        jdbcTemplate.update("""
+                INSERT INTO NOTIFICATIONS (NOTIFICATION_TYPE, TARGET_DEST, PAYLOAD_CONTENT, CURRENT_STATE,
+                    FAILURE_COUNT, DISPATCH_COUNT, IS_BLOCKED, CREATED_AT, UPDATED_AT)
+                VALUES ('EMAIL', ?, 'message', ?, 0, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, target, status, blocked);
+    }
+
+    private int countNotifications(String target, String status) {
+        Integer count = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM NOTIFICATIONS WHERE TARGET_DEST = ? AND CURRENT_STATE = ?
+                """, Integer.class, target, status);
+        if (count == null) {
+            throw new AssertionError("Notification count is null");
+        }
+        return count;
+    }
+
 }
